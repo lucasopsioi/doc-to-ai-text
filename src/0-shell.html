@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>文档转 AI 文本 · PDF / PPT / 邮件</title>
+<style>
+  :root{
+    --bg:#f5f6f7; --card:#fff; --ink:#22262a; --muted:#6b7176; --line:#dfe2e5;
+    --accent:#1f6f8b; --accent-soft:#e8f1f4; --warn:#b45309; --ok:#1b6e4f;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#16191c; --card:#1e2226; --ink:#e6e8ea; --muted:#9aa1a7; --line:#2f353a;
+           --accent:#5fb3cf; --accent-soft:#1d3239; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:24px;background:var(--bg);color:var(--ink);
+       font:14px/1.6 "Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+  #drop{border:2px dashed var(--line);border-radius:10px;padding:40px 20px;text-align:center;
+        cursor:pointer;transition:.15s;background:var(--card)}
+  #drop.hot{border-color:var(--accent);background:var(--accent-soft)}
+  #drop b{color:var(--accent);font-size:16px}
+  #drop small{display:block;color:var(--muted);margin-top:6px}
+  .opts{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;font-size:13px}
+  .opts label{display:flex;align-items:center;gap:6px;cursor:pointer}
+  .opts hr{width:100%;border:0;border-top:1px solid var(--line);margin:2px 0}
+  .opts .grp{width:100%;color:var(--muted);font-size:12px;letter-spacing:.5px;margin:-4px 0 -6px}
+  .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+  .tabs button{background:transparent;color:var(--muted);border:0;border-bottom:2px solid transparent;
+               border-radius:0;padding:9px 16px;font-size:14px}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+  .panel[hidden]{display:none}
+  #inText{height:300px;white-space:pre-wrap}
+  .rep{font-size:13px;line-height:1.7;margin-top:10px}
+  .rep b{color:var(--accent)}
+  .rep .w{color:var(--warn)}
+  button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:8px 16px;
+         font-size:13px;cursor:pointer;font-family:inherit}
+  button:disabled{opacity:.45;cursor:default}
+  button.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  textarea{width:100%;height:460px;font:12px/1.55 Consolas,"Courier New",monospace;
+           background:var(--bg);color:var(--ink);border:1px solid var(--line);
+           border-radius:6px;padding:12px;resize:vertical;white-space:pre}
+  .bar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  .stat{color:var(--muted);font-size:12px}
+  .err{color:#b02a2a;white-space:pre-wrap}
+  .ok{color:var(--ok)}
+  .warn{color:var(--warn)}
+  details{margin-top:10px}
+  summary{cursor:pointer;color:var(--muted);font-size:13px}
+  details p,details li{color:var(--muted);font-size:13px}
+  code{background:var(--accent-soft);padding:1px 5px;border-radius:3px;font-size:12px}
+  select{font-family:inherit;font-size:13px;padding:2px 4px;background:var(--card);
+         color:var(--ink);border:1px solid var(--line);border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>文档转 AI 文本</h1>
+  <div class="sub">把 <b>PDF</b> / <b>PPT</b> / <b>Outlook 邮件</b> 拖进来 &rarr; 生成带位置和格式信息的结构化文本 &rarr; 复制给 AI，AI 能照着还原成 PPT。全程在本机浏览器里跑，文件不上传任何地方。</div>
+
+  <div class="tabs">
+    <button id="tabA" class="on">① 文件 &rarr; AI 文本</button>
+    <button id="tabB">② AI 文本 &rarr; PPT</button>
+  </div>
+
+  <div class="panel" id="panelA">
+
+  <div id="drop">
+    <b>把 PDF / PPT / 网页邮件 拖到这里</b>
+    <small>
+      或点击选择 &middot; 一次多个、多种格式可混着拖<br><code>.pdf</code> <code>.pptx</code> <code>.potx</code> <code>.mht</code> <code>.mhtml</code> <code>.htm</code> <code>.html</code><br>Outlook 邮件：另存为「单个文件网页(.mht)」最省事；存成 .htm 的话请把 _files 里的图一起拖进来<br>
+      加密但能正常打开的 PDF 会自动解密
+    </small>
+    <input type="file" id="file" accept=".pdf,.pptx,.potx,.mht,.mhtml,.htm,.html" multiple hidden>
+  </div>
+
+  <div class="card">
+    <div class="opts">
+      <span class="grp">通用</span>
+      <label><input type="checkbox" id="optPreamble" checked> 附还原说明（给 AI 看的格式解释）</label>
+      <label><input type="checkbox" id="optCompact" checked> 紧凑模式（省略默认值，页数多时必开）</label>
+      <div class="grp">HTML / 邮件</div>
+      <label>渲染宽度
+        <select id="optHtmlWidth">
+          <option value="700">700px（窄，手机版邮件）</option>
+          <option value="900" selected>900px（默认，常见邮件宽度）</option>
+          <option value="1200">1200px（宽，网页）</option>
+        </select>
+      </label>
+      <label>切页
+        <select id="optHtmlPage">
+          <option value="slice" selected>按目标版式切成多页</option>
+          <option value="one">整封一页（不切）</option>
+        </select>
+      </label>
+      <label>单位
+        <select id="optUnit">
+          <option value="cm">厘米</option>
+          <option value="pt">磅 pt</option>
+          <option value="in">英寸</option>
+          <option value="emu">EMU（PPT 原生）</option>
+        </select>
+      </label>
+      <hr>
+      <span class="grp">PDF 专用</span>
+      <label><input type="checkbox" id="optPara" checked> 合并行为段落</label>
+      <label><input type="checkbox" id="optColumn" checked> 多栏检测</label>
+      <label><input type="checkbox" id="optHF" checked> 剔除页眉页脚</label>
+      <label><input type="checkbox" id="optShape" checked> 提取矢量图形</label>
+      <label><input type="checkbox" id="optTable" checked> 检测表格</label>
+      <label><input type="checkbox" id="optChart" checked> 疑似图表分析</label>
+      <label><input type="checkbox" id="optRuns"> 逐 run 输出字体变化</label>
+      <label>目标版式
+        <select id="optTarget">
+          <option value="raw">保持 PDF 原尺寸</option>
+          <option value="16:9">折算到 16:9 幻灯片</option>
+          <option value="4:3">折算到 4:3 幻灯片</option>
+        </select>
+      </label>
+      <hr>
+      <span class="grp">PPT 专用</span>
+      <label><input type="checkbox" id="optLayouts" checked> 输出版式库（母版/版式元素只列一次）</label>
+      <label><input type="checkbox" id="optPptChart" checked> 提取图表数据</label>
+      <label><input type="checkbox" id="optCellFmt" checked> 表格逐格格式</label>
+      <label><input type="checkbox" id="optEmptyPh"> 包含空占位符</label>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="bar">
+      <button id="copy" disabled>复制全部</button>
+      <button id="save" class="ghost" disabled>另存为 .md</button>
+      <button id="toPptx" class="ghost" disabled>直接转成 .pptx</button>
+      <button id="hifi" class="ghost" hidden disabled>高保真重解析</button>
+      <label id="hifiOpts" hidden style="font-size:13px;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="optImages" checked> 同时导出图片
+      </label>
+      <span class="stat" id="stat">等待文件&hellip;</span>
+    </div>
+    <div class="stat" id="hifiHint" hidden style="margin:-4px 0 8px">
+      内置高保真引擎（PyMuPDF）可用。冷僻字体解不出、表格没认出来、或者需要把图片导成文件时，点它重解析一遍。
+    </div>
+    <textarea id="out" placeholder="转换结果会出现在这里&hellip;" spellcheck="false"></textarea>
+  </div>
+
+  </div><!-- /panelA -->
+
+  <div class="panel" id="panelB" hidden>
+    <div class="card">
+      <div class="sub" style="margin:0 0 10px">
+        把①生成的结构化文本（或你让 AI 改过之后的版本）粘到下面，直接吐出真 <code>.pptx</code>。
+        <b>不经过 AI 写代码</b>——坐标写多少就是多少，同一份文本每次生成的结果完全一致。
+      </div>
+      <textarea id="inText" placeholder="粘贴结构化文本…&#10;&#10;应当包含「画布尺寸」或「页面尺寸」，以及「## 第 N 页」或「## 幻灯片 N」这样的行。" spellcheck="false"></textarea>
+      <div class="bar" style="margin:10px 0 0">
+        <button id="genPptx">生成 .pptx</button>
+        <button id="pasteBack" class="ghost">用①的结果填入</button>
+        <span class="stat" id="genStat">等待粘贴&hellip;</span>
+      </div>
+      <div class="rep" id="genReport"></div>
+    </div>
+
+    <details open>
+      <summary>这一步能还原什么 / 不能还原什么</summary>
+      <p><b>能：</b>页面尺寸与背景、文本框（逐段逐 run 的字号/粗斜体/字体/颜色/对齐）、
+      矩形圆角矩形椭圆三角形等预设形状（填充/渐变/边框/虚线/旋转/翻转）、线条、
+      表格（行列、列宽行高、逐格文字）、组合内部坐标系的换算。</p>
+      <p><b>不能：</b><b>图片</b>——文本里只有位置和文件名没有像素，会画成带文件名的虚线占位框，
+      位置给你留着，自己贴图；<b>真图表对象</b>——「疑似图表」会按文本里给的柱子几何原样摆成矩形
+      （形状与原图一致），但那不是可编辑的 PPT 图表；<b>阴影发光等效果</b>暂未还原。</p>
+      <p><b>提示：</b>让 AI 改内容时，让它<b>只改引号里的文字</b>，别动「位置:」那些行——
+      改文字是安全的，改坐标就得自己核对了。</p>
+    </details>
+  </div><!-- /panelB -->
+
+  <details>
+    <summary>PDF 能提取什么 / 不能提取什么</summary>
+    <p><b>能（实测，精确）：</b>页面尺寸与旋转、每段文字的内容与坐标、字体名/字号/粗斜体/颜色、
+    矢量图形的路径与填充边框颜色、图片的位置尺寸与格式、绘制顺序（z 轴）、文档大纲与书签、
+    加密 PDF 自动解密。</p>
+    <p><b>能（推断，带置信度）：</b>行合并成段落、段落归成文本块、多栏阅读顺序、页眉页脚识别、
+    表格行列还原、柱状图/饼图的几何还原、背景色块识别。</p>
+    <p><b>不能：</b>图片本身的像素（只给位置和尺寸；exe 版可用「高保真重解析」导出图片）、
+    扫描件里的文字（没有文字层，需 OCR）、动画与交互。</p>
+  </details>
+
+  <details>
+    <summary>PPT 能提取什么 / 不能提取什么</summary>
+    <p><b>几乎全是实测值。</b>PPTX 里存的是语义对象，不需要像 PDF 那样从几何反推：
+    每个形状的类型与几何、填充（纯色/渐变/图案/图片）、边框、阴影发光等效果、
+    逐 run 的字号字体粗斜体颜色、段落对齐行距项目符号、表格逐格格式与合并、
+    图表类型与全部数据系列、组合层级、z 轴顺序。</p>
+    <p><b>★ 版式与母版：</b>会读取 slideLayout / slideMaster，把模板元素（logo、色条、页脚）
+    单独列进「版式库」只描述一次；占位符继承来的位置和字号也会解析出来并标注来源。
+    <b>隐藏形状</b>会跳过并计数，<b>图片裁剪</b>会给出裁剪百分比。</p>
+    <p><b>不能：</b>图片像素（只给文件名与位置）、SmartArt 内部布局（降级成组合形状）、
+    动画与切换效果、旧版 <code>.ppt</code>（需先另存为 <code>.pptx</code>）。</p>
+  </details>
+
+  <details>
+    <summary>注意：数据会离开这台机器吗</summary>
+    <p>这个工具本身<b>不联网</b>，文件全程只在本机内存里处理，不上传任何地方。
+    但你把生成的文本<b>粘贴给 AI</b> 时，文本就离开了这台机器——之后怎么用是你的判断。</p>
+  </details>
+
+  <details>
+    <summary>怎么装到公司电脑上</summary>
+    <p>这个文件本身就是纯文本。在公司电脑上：打开记事本 &rarr; 把这份 HTML 的全部源码粘贴进去 &rarr; 另存为 <code>PDF转AI文本.html</code>（编码选 UTF-8）&rarr; 双击用 Edge/Chrome 打开即可。不需要安装、不需要管理员权限、不需要联网。</p>
+    <p>需要 Edge / Chrome 100+（用到 <code>DecompressionStream</code>）。</p>
+  </details>
+</div>
+
+<script>
+"use strict";
+/* <!--INJECT:1-core.js--> */
+/* <!--INJECT:2-font.js--> */
+/* <!--INJECT:3-render.js--> */
+/* <!--INJECT:4-layout.js--> */
+/* <!--INJECT:5-emit.js--> */
+/* <!--INJECT:7-ooxml.js--> */
+/* <!--INJECT:9-html.js--> */
+/* <!--INJECT:10-htmlmeasure.js--> */
+/* <!--INJECT:11-htmlemit.js--> */
+/* <!--INJECT:8-topptx.js--> */
+/* <!--INJECT:6-ui.js--> */
+</script>
+</body>
+</html>
